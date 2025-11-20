@@ -19,6 +19,9 @@ public class AdaptiveDifficultyEngine {
 
     private CircularQueue<PerformanceMetric> recentMetrics = new CircularQueue<>(10);
 
+    private DifficultyEvaluator evaluator = new DifficultyEvaluator();
+
+
     /**
      * Records new metrics, updates internal data structures and
      * returns the new difficulty level.
@@ -42,7 +45,7 @@ public class AdaptiveDifficultyEngine {
 
         performanceHistory.insert(performanceScore);
 
-        String difficulty = decideDifficulty(stats);
+        String difficulty = evaluator.evaluate(window);
 
         difficultyHistory.push(difficulty);
 
