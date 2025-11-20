@@ -1,5 +1,6 @@
 package game;
 
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -17,18 +18,21 @@ public class CollisionHandler {
 
         int kills = 0;
 
-        bullets.removeIf(b -> {
+
+        Iterator<Bullet> iterator = bullets.iterator();
+
+        while (iterator.hasNext()) {
+            Bullet b = iterator.next();
+
             for (Enemy e : enemies) {
                 if (isColliding(b, e)) {
-                    e.setDestroyed(true);
                     kills++;
-                    return true; // remove this bullet
+                    e.isDestroyed();
+                    iterator.remove(); // remove bullet
+                    break; // stop checking this bullet
                 }
             }
-            return false;
-        });
-
-        enemies.removeIf(Enemy::isDestroyed);
+        }
 
         return kills;
     }
