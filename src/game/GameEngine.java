@@ -36,7 +36,9 @@ public class GameEngine {
 
     public void shoot(double x, double y) {
         bullets.add(new Bullet(x, y));
+        shots++; // ✅ count shots for accuracy
     }
+    
 
     /** Called every frame by AnimationTimer */
     public void update() {
