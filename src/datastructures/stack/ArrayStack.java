@@ -29,4 +29,8 @@ public class ArrayStack<T> {
     public int size() {
         return top + 1;
     }
+    
+    public T peek() {
+        return (top == -1) ? null : data[top];
+    }
 }

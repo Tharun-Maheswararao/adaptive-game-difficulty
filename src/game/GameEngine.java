@@ -2,150 +2,116 @@ package game;
 
 import difficulty.AdaptiveDifficultyEngine;
 import difficulty.PerformanceMetric;
-import difficulty.Stats;
-import difficulty.StatsCalculator;
+import difficulty.DifficultyLevel;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-
 
 public class GameEngine {
 
-    private List<Bullet> bullets = new ArrayList<>();
-    private List<Enemy> enemies = new ArrayList<>();
+    private final Player player;
+    private final List<Bullet> bullets = new ArrayList<>();
+    private final List<Enemy> enemies = new ArrayList<>();
 
-    private int score = 0;
-    private int kills = 0;
-    private int bypassed = 0;
-    private int shots = 0;
-    private int lastScore = 0;
+    private final EnemySpawner spawner;
+    private final AdaptiveDifficultyEngine difficultyEngine;
+    private final GameStats stats = new GameStats();
 
-    private String difficulty = "EASY";
+    private boolean gameOver = false;
+    private long lastDifficultyUpdate = System.currentTimeMillis();
+    
+    private long lastShotTime = 0;
+    private static final long SHOOT_INTERVAL = 250; // fire once every 0.25s
 
-    private AdaptiveDifficultyEngine difficultyEngine;
-    private long lastDifficultyUpdate;
-
-    private static final long DIFFICULTY_INTERVAL = 5000; // 5 seconds
-    private static final int MAX_BYPASS = 10;              // game over
-
-    public GameEngine(AdaptiveDifficultyEngine engine) {
-        this.difficultyEngine = engine;
-        this.lastDifficultyUpdate = System.currentTimeMillis();
+    public GameEngine(AdaptiveDifficultyEngine difficultyEngine) {
+        this.difficultyEngine = difficultyEngine;
+        this.spawner = new EnemySpawner(difficultyEngine);
+        this.player = new Player(Constants.WIDTH / 2.0, Constants.HEIGHT - 60);
     }
 
-    public void shoot(double x, double y) {
-        bullets.add(new Bullet(x, y));
-    }
+    public void update(boolean left, boolean right, boolean shoot) {
+        if (gameOver) return;
 
-    /** Called every frame by AnimationTimer */
-    public void update() {
-        updateBullets();
-        updateEnemies();
-        checkDifficultyUpdate();
-    }
+        // Move player
+        if (left) player.moveLeft();
+        if (right) player.moveRight();
 
-    private void updateBullets() {
-        Iterator<Bullet> iterator = bullets.iterator();
+        // Shoot
+        if (shoot) fireBullet();
 
-        while (iterator.hasNext()) {
-            Bullet b = iterator.next();
-            b.update();
+        // Update bullets
+        bullets.forEach(Bullet::update);
+        bullets.removeIf(Bullet::isOffScreen);
 
-            if (b.isOffScreen()) {
-                iterator.remove();
-            }
-        }
-    }
+        // Spawn enemies
+        spawner.trySpawn(enemies);
 
-    private void updateEnemies() {
-        Iterator<Enemy> iterator = enemies.iterator();
+        // Update enemies
+        enemies.forEach(Enemy::update);
 
-        while (iterator.hasNext()) {
-            Enemy e = iterator.next();
-            e.update();
-
-            boolean enemyHit = false;
-
-            // Check if a bullet hits this enemy
-            Iterator<Bullet> bIt = bullets.iterator();
-            while (bIt.hasNext()) {
-                Bullet b = bIt.next();
-
-                if (isColliding(b, e)) {
-                    kills++;
-                    score += 10;
-                    enemyHit = true;
-                    bIt.remove(); // remove the bullet
-                    break;        // one bullet is enough
+        // Check bypass
+        List<Enemy> toRemove = new ArrayList<>();
+        for (Enemy e : enemies) {
+            if (e.getY() > Constants.DANGER_LINE_Y) {
+                stats.bypassed++;
+                stats.score -= 2;
+                toRemove.add(e);
+                if (stats.bypassed >= Constants.MAX_BYPASSED) {
+                    gameOver = true;
                 }
             }
-
-            if (enemyHit) {
-                iterator.remove(); // remove enemy
-                continue;
-            }
-
-            // Remove if enemy bypassed bottom of screen (temporary height 600)
-            if (e.getY() > 600) {
-                bypassed++;
-                score -= 2;
-                iterator.remove();
-            }
         }
-    }
+        enemies.removeAll(toRemove);
 
+        // Collisions
+        int kills = CollisionHandler.handleCollisions(bullets, enemies);
+        if (kills > 0) {
+            stats.kills += kills;
+            stats.score += kills * 10;
+        }
 
-    private boolean isColliding(Bullet b, Enemy e) {
-        return (b.getX() >= e.getX() &&
-                b.getX() <= e.getX() + e.getWidth() &&
-                b.getY() >= e.getY() &&
-                b.getY() <= e.getY() + e.getHeight());
-    }
+        // Time
+        stats.timeSeconds += 1.0 / 60.0;
 
-    /**
-     * Updates difficulty every 5 seconds based on recent performance.
-     */
-    private void checkDifficultyUpdate() {
+        // Difficulty update every 5s
         long now = System.currentTimeMillis();
-
-        if (now - lastDifficultyUpdate >= DIFFICULTY_INTERVAL) {
-
-            // Score difference in last interval
-            int scoreDelta = score - lastScore;
-            lastScore = score;
-
-            PerformanceMetric metric = new PerformanceMetric(
-                    kills,
-                    shots,
-                    bypassed,
-                    scoreDelta
-            );
-
-            List<PerformanceMetric> metrics = new ArrayList<>();
-            metrics.add(metric);
-
-            difficulty = difficultyEngine.computeNewDifficulty(metrics);
-
+        if (now - lastDifficultyUpdate >= 5000) {
+            List<PerformanceMetric> window = new ArrayList<>();
+            window.add(new PerformanceMetric(kills, stats.shots, stats.bypassed, stats.score));
+            difficultyEngine.computeNewDifficulty(window);
             lastDifficultyUpdate = now;
         }
     }
 
-    public int getScore()     { return score; }
-    public int getKills()     { return kills; }
-    public int getBypassed()  { return bypassed; }
-    public String getDifficulty() { return difficulty; }
+    private void fireBullet() {
+        long now = System.currentTimeMillis();
 
+        // only fire if cooldown passed
+        if (now - lastShotTime >= SHOOT_INTERVAL) {
+            bullets.add(new Bullet(player.getX(), player.getY()));
+            stats.shots++;
+            lastShotTime = now;
+        }
+    }
+
+
+    // ---- GETTERS ----
+
+    public Player getPlayer() { return player; }
     public List<Bullet> getBullets() { return bullets; }
     public List<Enemy> getEnemies() { return enemies; }
 
-    /** Game ends when 10 enemies bypass */
-    public boolean isGameOver() {
-        return bypassed >= MAX_BYPASS;
+    public int getScore() { return stats.score; }
+    public double getAccuracy() { return stats.getAccuracy(); }
+    public int getBypassed() { return stats.bypassed; }
+    public int getBulletsLeft() { return bullets.size(); }
+    public int getKills() { return stats.kills; }
+
+    public DifficultyLevel getDifficultyLevel() {
+        return difficultyEngine.getCurrentDifficultyLevel();
     }
 
-    /** Adds a new enemy from the spawner */
-    public void spawnEnemy(Enemy e) {
-        enemies.add(e);
-    }
+    public boolean isGameOver() { return gameOver; }
+
+    public GameStats getStats() { return stats; }
 }

@@ -8,59 +8,95 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * AdaptiveDifficultyEngine decides whether the next difficulty level
- * should be EASY, MEDIUM or HARD based on recent performance.
+ * AdaptiveDifficultyEngine delegates difficulty decisions to DifficultyEvaluator
+ * and maintains history using BST + Stack + Queue.
  */
 public class AdaptiveDifficultyEngine {
 
-    private BalancedBST<Integer> performanceHistory = new BalancedBST<>();
+    private final BalancedBST<Integer> performanceHistory = new BalancedBST<>();
+    private final ArrayStack<DifficultyLevel> difficultyHistory = new ArrayStack<>(30);
+    private final CircularQueue<PerformanceMetric> recentMetrics = new CircularQueue<>(10);
 
-    private ArrayStack<String> difficultyHistory = new ArrayStack<>(30);
+    private final DifficultyEvaluator evaluator = new DifficultyEvaluator();
 
-    private CircularQueue<PerformanceMetric> recentMetrics = new CircularQueue<>(10);
+    private DifficultyLevel currentDifficulty = DifficultyLevel.EASY;
 
-    /**
-     * Records new metrics, updates internal data structures and
-     * returns the new difficulty level.
-     *
-     * @param metrics list of metrics collected during the last time slice
-     * @return difficulty label: "EASY", "MEDIUM" or "HARD"
-     */
-    public String computeNewDifficulty(List<PerformanceMetric> metrics) {
+    /** Update difficulty based on recent performance metrics. */
+    public DifficultyLevel computeNewDifficulty(List<PerformanceMetric> metrics) {
+
         if (metrics == null || metrics.isEmpty()) {
-            // No new information – default to EASY at the beginning.
-            return "EASY";
+            return currentDifficulty;
         }
+
+        // 1. Add metrics to sliding window
         for (PerformanceMetric m : metrics) {
             recentMetrics.enqueue(m);
         }
+
         List<PerformanceMetric> window = toList(recentMetrics);
 
+        // 2. Compute aggregated stats
         Stats stats = StatsCalculator.computeStats(window);
 
-        int performanceScore = computeScore(stats);
+        // 3. Store performance score in BST
+        int score = computeScore(stats);
+        performanceHistory.insert(score);
 
-        performanceHistory.insert(performanceScore);
+        // 4. Evaluate difficulty
+        DifficultyLevel newLevel = evaluator.evaluate(stats);
 
-        String difficulty = decideDifficulty(stats);
+        currentDifficulty = newLevel;
+        difficultyHistory.push(newLevel);
 
-        difficultyHistory.push(difficulty);
-
-        return difficulty;
+        return newLevel;
     }
 
-
-    public String undoDifficulty() {
+    /** Undo the last difficulty update. */
+    public DifficultyLevel undoDifficulty() {
         if (!difficultyHistory.isEmpty()) {
-            return difficultyHistory.pop();
+            difficultyHistory.pop();
         }
-        return "EASY"; // Fallback
+        if (!difficultyHistory.isEmpty()) {
+            currentDifficulty = difficultyHistory.peek();
+        } else {
+            currentDifficulty = DifficultyLevel.EASY;
+            difficultyHistory.push(currentDifficulty);
+        }
+        return currentDifficulty;
     }
 
-    /**
-     * Helper: copies all elements from a CircularQueue into a new List without
-     * permanently removing them from the queue.
-     */
+    public DifficultyLevel getCurrentDifficultyLevel() {
+        return currentDifficulty;
+    }
+
+    // =================== GAME ENGINE HELPERS ===================
+
+    public int getEnemySpawnIntervalMillis() {
+        return switch (currentDifficulty) {
+            case EASY -> 1200;
+            case MEDIUM -> 900;
+            case HARD -> 600;
+        };
+    }
+
+    public double getEnemySpeedMultiplier() {
+        return switch (currentDifficulty) {
+            case EASY -> 1.0;
+            case MEDIUM -> 1.35;
+            case HARD -> 1.75;
+        };
+    }
+
+    public int getMaxActiveEnemies() {
+        return switch (currentDifficulty) {
+            case EASY -> 5;
+            case MEDIUM -> 8;
+            case HARD -> 12;
+        };
+    }
+
+    // =================== INTERNAL HELPERS ===================
+
     private List<PerformanceMetric> toList(CircularQueue<PerformanceMetric> queue) {
         List<PerformanceMetric> list = new ArrayList<>(queue.size());
         int n = queue.size();
@@ -69,7 +105,7 @@ public class AdaptiveDifficultyEngine {
             PerformanceMetric m = queue.dequeue();
             if (m != null) {
                 list.add(m);
-                queue.enqueue(m); // put it back
+                queue.enqueue(m);
             }
         }
         return list;
@@ -78,26 +114,11 @@ public class AdaptiveDifficultyEngine {
     private int computeScore(Stats stats) {
         int killsWeight = 10;
         int bypassPenalty = 20;
-        int accuracyBonus = (int) (stats.accuracy * 100); // 0..100
+        int accuracyBonus = (int) (stats.accuracy * 100);
 
-        return (stats.kills * killsWeight)
+        return stats.kills * killsWeight
                 + stats.scoreDelta
                 + accuracyBonus
-                - (stats.bypassed * bypassPenalty);
-    }
-
-    private String decideDifficulty(Stats stats) {
-        // If many enemies bypassed or accuracy is very low → EASY
-        if (stats.bypassed >= 3 || stats.accuracy < 0.30) {
-            return "EASY";
-        }
-
-        // Very good performance → HARD
-        if (stats.accuracy >= 0.75 && stats.bypassed == 0 && stats.scoreDelta > 0) {
-            return "HARD";
-        }
-
-        // Otherwise keep game in MEDIUM
-        return "MEDIUM";
+                - stats.bypassed * bypassPenalty;
     }
 }

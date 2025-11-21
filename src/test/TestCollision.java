@@ -1,7 +1,7 @@
 package test;
 
 import game.Bullet;
-import game.CollisionHandler;
+//import game.CollisionHandler;
 
 import java.util.ArrayList;
 import java.util.List;

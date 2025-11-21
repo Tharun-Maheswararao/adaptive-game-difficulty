@@ -4,9 +4,6 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 
-/**
- * Draws score, accuracy, bullets left, bypassed count, and difficulty.
- */
 public class HUDRenderer {
 
     public void render(GraphicsContext gc,
@@ -14,7 +11,7 @@ public class HUDRenderer {
                        double accuracy,
                        int bypassed,
                        int bulletsLeft,
-                       String difficulty) {
+                       Object difficulty) {
 
         gc.setFill(Color.WHITE);
         gc.setFont(Font.font(18));

@@ -7,7 +7,7 @@ package game;
 public class Bullet {
 
     private double x, y;
-    private double speed = 8;
+    private double speed = Constants.BULLET_SPEED;
 
     public Bullet(double x, double y) {
         this.x = x;
